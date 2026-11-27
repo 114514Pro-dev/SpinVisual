@@ -8,6 +8,7 @@ using LabApi.Events.Handlers;
 using LabApi.Features;
 using LabApi.Features.Wrappers;
 using LabApi.Loader.Features.Plugins;
+using PlayerRoles;
 using PlayerRoles.FirstPersonControl;
 using PlayerRoles.FirstPersonControl.NetworkMessages;
 using RelativePositioning;
@@ -74,10 +75,20 @@ public sealed class SpinVisualPlugin : Plugin
 
         FpcMouseLook mouseLook = role.FpcModule.MouseLook;
         double now = Time.timeAsDouble;
-        float yaw = Spins.TryGetValue(hub, out Spin existing) && ReferenceEquals(mouseLook, existing.MouseLook)
-            ? existing.GetYaw(now)
-            : mouseLook.CurrentHorizontal;
-        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond);
+        bool continuing = Spins.TryGetValue(hub, out Spin existing) && ReferenceEquals(mouseLook, existing.MouseLook);
+        float yaw = continuing ? existing.GetYaw(now) : mouseLook.CurrentHorizontal;
+        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond, continuing && existing.HideFromSpectators);
+        return true;
+    }
+
+    internal static bool TrySetHideFromSpectators(Player player, bool hide)
+    {
+        ReferenceHub hub = player.ReferenceHub;
+        if (!Spins.TryGetValue(hub, out Spin spin))
+            return false;
+
+        spin.HideFromSpectators = hide;
+        Spins[hub] = spin;
         return true;
     }
 
@@ -105,7 +116,8 @@ public sealed class SpinVisualPlugin : Plugin
 
             replacements++;
             // GetNewSyncData takes the observer first and the player being synchronized second.
-            yield return new CodeInstruction(OpCodes.Ldarg_1).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            yield return new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            yield return new CodeInstruction(OpCodes.Ldarg_1);
             yield return new CodeInstruction(OpCodes.Call, factory);
         }
 
@@ -114,9 +126,10 @@ public sealed class SpinVisualPlugin : Plugin
     }
 
     private static FpcSyncData CreateSyncData(FpcSyncData previous, PlayerMovementState movementState,
-        bool grounded, RelativePosition position, FpcMouseLook mouseLook, ReferenceHub target)
+        bool grounded, RelativePosition position, FpcMouseLook mouseLook, ReferenceHub observer, ReferenceHub target)
     {
-        if (!Spins.TryGetValue(target, out Spin spin) || !ReferenceEquals(mouseLook, spin.MouseLook))
+        if (!Spins.TryGetValue(target, out Spin spin) || !ReferenceEquals(mouseLook, spin.MouseLook) ||
+            (spin.HideFromSpectators && observer.roleManager.CurrentRole.RoleTypeId is (RoleTypeId.Spectator or RoleTypeId.Overwatch)))
             return new FpcSyncData(previous, movementState, grounded, position, mouseLook);
 
         float originalYaw = mouseLook.CurrentHorizontal;
@@ -132,17 +145,19 @@ public sealed class SpinVisualPlugin : Plugin
         }
     }
 
-    private readonly struct Spin
+    private struct Spin
     {
-        internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond)
+        internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond, bool hideFromSpectators)
         {
             MouseLook = mouseLook;
             Yaw = yaw;
             StartedAt = startedAt;
             DegreesPerSecond = degreesPerSecond;
+            HideFromSpectators = hideFromSpectators;
         }
 
         internal FpcMouseLook MouseLook { get; }
+        internal bool HideFromSpectators { get; set; }
         private float Yaw { get; }
         private double StartedAt { get; }
         private float DegreesPerSecond { get; }

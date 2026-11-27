@@ -9,7 +9,7 @@ namespace SpinVisual;
 public sealed class SpinVisualCommand : ICommand
 {
     private const float DefaultSpeed = 1440;
-    private const string Usage = "用法：spinvisual <玩家编号> on [度/秒] 或 spinvisual <玩家编号> off";
+    private const string Usage = "用法：spinvisual <玩家编号> on [度/秒]、off 或 hide-spectators <0|1>";
 
     public string Command => "spinvisual";
     public string[] Aliases => Array.Empty<string>();
@@ -62,6 +62,18 @@ public sealed class SpinVisualCommand : ICommand
             case "off" when arguments.Count == 2:
                 SpinVisualPlugin.Stop(player);
                 response = $"已关闭 {player.Nickname} 的旋转效果。";
+                return true;
+            case "hide-spectators" when arguments.Count == 3 && arguments.At(2) is "0" or "1":
+                bool hide = arguments.At(2) == "1";
+                if (!SpinVisualPlugin.TrySetHideFromSpectators(player, hide))
+                {
+                    response = $"{player.Nickname} 当前未开启旋转效果。";
+                    return false;
+                }
+
+                response = hide
+                    ? $"已对观战者隐藏 {player.Nickname} 的旋转效果。"
+                    : $"观战者现在可以看到 {player.Nickname} 的旋转效果。";
                 return true;
             default:
                 response = Usage;
