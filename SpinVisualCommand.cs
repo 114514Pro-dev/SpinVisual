@@ -9,7 +9,7 @@ namespace SpinVisual;
 public sealed class SpinVisualCommand : ICommand
 {
     private const float DefaultSpeed = 1440;
-    private const string Usage = "用法：spinvisual <玩家编号|all> on [度/秒 [观战隐藏0|1]] 或 spinvisual <玩家编号|all> off";
+    private const string Usage = "用法：spinvisual <玩家编号|all> on [度/秒 [保留跟随视角0|1]] 或 spinvisual <玩家编号|all> off";
 
     public string Command => "spinvisual";
     public string[] Aliases => Array.Empty<string>();
@@ -63,27 +63,27 @@ public sealed class SpinVisualCommand : ICommand
                     return false;
                 }
 
-                bool? hideFromSpectators = null;
+                bool? preserveSpectatedView = null;
                 if (arguments.Count == 4)
                 {
                     string option = arguments.At(3);
                     if (option is not ("0" or "1"))
                     {
-                        response = "观战隐藏选项须为 0 或 1。";
+                        response = "保留跟随视角选项须为 0 或 1。";
                         return false;
                     }
 
-                    hideFromSpectators = option == "1";
+                    preserveSpectatedView = option == "1";
                 }
 
                 if (player == null)
                 {
-                    int started = SpinVisualPlugin.StartAll(speed, hideFromSpectators);
+                    int started = SpinVisualPlugin.StartAll(speed, preserveSpectatedView);
                     response = started > 0 ? $"已开启 {started} 名玩家的旋转效果。" : "当前没有可开启旋转效果的玩家。";
                     return started > 0;
                 }
 
-                if (!SpinVisualPlugin.TryStart(player, speed, hideFromSpectators))
+                if (!SpinVisualPlugin.TryStart(player, speed, preserveSpectatedView))
                 {
                     response = "该玩家当前无法开启旋转效果。";
                     return false;

@@ -8,7 +8,6 @@ using LabApi.Events.Handlers;
 using LabApi.Features;
 using LabApi.Features.Wrappers;
 using LabApi.Loader.Features.Plugins;
-using PlayerRoles;
 using PlayerRoles.FirstPersonControl;
 using PlayerRoles.FirstPersonControl.NetworkMessages;
 using RelativePositioning;
@@ -67,7 +66,7 @@ public sealed class SpinVisualPlugin : Plugin
         }
     }
 
-    internal static bool TryStart(Player player, float degreesPerSecond, bool? hideFromSpectators)
+    internal static bool TryStart(Player player, float degreesPerSecond, bool? preserveSpectatedView)
     {
         ReferenceHub hub = player.ReferenceHub;
         if (!player.IsAlive || hub.roleManager.CurrentRole is not IFpcRole role || !role.FpcModule.ModuleReady)
@@ -77,17 +76,17 @@ public sealed class SpinVisualPlugin : Plugin
         double now = Time.timeAsDouble;
         bool continuing = Spins.TryGetValue(hub, out Spin existing) && ReferenceEquals(mouseLook, existing.MouseLook);
         float yaw = continuing ? existing.GetYaw(now) : mouseLook.CurrentHorizontal;
-        bool hide = hideFromSpectators ?? (continuing && existing.HideFromSpectators);
-        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond, hide);
+        bool preserveView = preserveSpectatedView ?? (continuing && existing.PreserveSpectatedView);
+        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond, preserveView);
         return true;
     }
 
-    internal static int StartAll(float degreesPerSecond, bool? hideFromSpectators)
+    internal static int StartAll(float degreesPerSecond, bool? preserveSpectatedView)
     {
         int started = 0;
         foreach (Player player in Player.ReadyList)
         {
-            if (!player.IsHost && !player.IsDestroyed && TryStart(player, degreesPerSecond, hideFromSpectators))
+            if (!player.IsHost && !player.IsDestroyed && TryStart(player, degreesPerSecond, preserveSpectatedView))
                 started++;
         }
 
@@ -131,7 +130,7 @@ public sealed class SpinVisualPlugin : Plugin
         bool grounded, RelativePosition position, FpcMouseLook mouseLook, ReferenceHub observer, ReferenceHub target)
     {
         if (!Spins.TryGetValue(target, out Spin spin) || !ReferenceEquals(mouseLook, spin.MouseLook) ||
-            (spin.HideFromSpectators && observer.roleManager.CurrentRole.RoleTypeId is (RoleTypeId.Spectator or RoleTypeId.Overwatch)))
+            (spin.PreserveSpectatedView && ReferenceEquals(Player.Get(observer)?.CurrentlySpectating?.ReferenceHub, target)))
             return new FpcSyncData(previous, movementState, grounded, position, mouseLook);
 
         float originalYaw = mouseLook.CurrentHorizontal;
@@ -149,17 +148,17 @@ public sealed class SpinVisualPlugin : Plugin
 
     private readonly struct Spin
     {
-        internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond, bool hideFromSpectators)
+        internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond, bool preserveSpectatedView)
         {
             MouseLook = mouseLook;
             Yaw = yaw;
             StartedAt = startedAt;
             DegreesPerSecond = degreesPerSecond;
-            HideFromSpectators = hideFromSpectators;
+            PreserveSpectatedView = preserveSpectatedView;
         }
 
         internal FpcMouseLook MouseLook { get; }
-        internal bool HideFromSpectators { get; }
+        internal bool PreserveSpectatedView { get; }
         private float Yaw { get; }
         private double StartedAt { get; }
         private float DegreesPerSecond { get; }

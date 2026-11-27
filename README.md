@@ -19,6 +19,6 @@ spinvisual <player-id|all> off
 
 The default speed is 1440 degrees per second (4 turns per second). The command accepts any positive, finite speed. Running `on` again updates the speed. Role changes, disconnects, round restarts, and plugin disable clear the effect.
 
-After the speed, pass `1` to hide the spin from Spectator and Overwatch clients or `0` to show it to them. A new spin defaults to `0`. Omit the option to keep an active spin's current setting.
+After the speed, pass `1` to preserve the player's normal first-person view for spectators currently following that player. Those spectators still see other players spin. Pass `0` to show the spin even when someone is following that player. A new spin defaults to `0`. Omit the option to keep an active spin's current setting.
 
-For example, `spinvisual all on 2400 1` starts the effect for all currently eligible players and hides it from spectators. `spinvisual all off` stops all active spins.
+For example, `spinvisual all on 2400 1` starts the effect for all currently eligible players. Each spectator sees the normal first-person view of the player they follow and sees everyone else spin. `spinvisual all off` stops all active spins.
