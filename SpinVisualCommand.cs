@@ -9,7 +9,7 @@ namespace SpinVisual;
 public sealed class SpinVisualCommand : ICommand
 {
     private const float DefaultSpeed = 1440;
-    private const string Usage = "用法：spinvisual <玩家编号> on [度/秒]、off 或 hide-spectators <0|1>";
+    private const string Usage = "用法：spinvisual <玩家编号|all> on [度/秒 [观战隐藏0|1]] 或 spinvisual <玩家编号|all> off";
 
     public string Command => "spinvisual";
     public string[] Aliases => Array.Empty<string>();
@@ -26,24 +26,36 @@ public sealed class SpinVisualCommand : ICommand
             return false;
         }
 
-        if (arguments.Count < 2 || !int.TryParse(arguments.At(0), out int playerId))
+        if (arguments.Count < 2)
         {
             response = Usage;
             return false;
         }
 
-        Player? player = Player.Get(playerId);
-        if (player == null || player.IsDestroyed)
+        string target = arguments.At(0);
+        bool all = target.Equals("all", StringComparison.OrdinalIgnoreCase);
+        Player? player = null;
+        if (!all)
         {
-            response = "找不到该玩家。";
-            return false;
+            if (!int.TryParse(target, out int playerId))
+            {
+                response = Usage;
+                return false;
+            }
+
+            player = Player.Get(playerId);
+            if (player == null || player.IsDestroyed)
+            {
+                response = "找不到该玩家。";
+                return false;
+            }
         }
 
         switch (arguments.At(1).ToLowerInvariant())
         {
-            case "on" when arguments.Count <= 3:
+            case "on" when arguments.Count <= 4:
                 float speed = DefaultSpeed;
-                if (arguments.Count == 3 &&
+                if (arguments.Count >= 3 &&
                     (!float.TryParse(arguments.At(2), NumberStyles.Float, CultureInfo.InvariantCulture, out speed)
                      || !(speed > 0) || float.IsInfinity(speed)))
                 {
@@ -51,7 +63,27 @@ public sealed class SpinVisualCommand : ICommand
                     return false;
                 }
 
-                if (!SpinVisualPlugin.TryStart(player, speed))
+                bool? hideFromSpectators = null;
+                if (arguments.Count == 4)
+                {
+                    string option = arguments.At(3);
+                    if (option is not ("0" or "1"))
+                    {
+                        response = "观战隐藏选项须为 0 或 1。";
+                        return false;
+                    }
+
+                    hideFromSpectators = option == "1";
+                }
+
+                if (player == null)
+                {
+                    int started = SpinVisualPlugin.StartAll(speed, hideFromSpectators);
+                    response = started > 0 ? $"已开启 {started} 名玩家的旋转效果。" : "当前没有可开启旋转效果的玩家。";
+                    return started > 0;
+                }
+
+                if (!SpinVisualPlugin.TryStart(player, speed, hideFromSpectators))
                 {
                     response = "该玩家当前无法开启旋转效果。";
                     return false;
@@ -60,20 +92,15 @@ public sealed class SpinVisualCommand : ICommand
                 response = $"已开启 {player.Nickname} 的旋转效果。";
                 return true;
             case "off" when arguments.Count == 2:
-                SpinVisualPlugin.Stop(player);
-                response = $"已关闭 {player.Nickname} 的旋转效果。";
-                return true;
-            case "hide-spectators" when arguments.Count == 3 && arguments.At(2) is "0" or "1":
-                bool hide = arguments.At(2) == "1";
-                if (!SpinVisualPlugin.TrySetHideFromSpectators(player, hide))
+                if (player == null)
                 {
-                    response = $"{player.Nickname} 当前未开启旋转效果。";
-                    return false;
+                    SpinVisualPlugin.StopAll();
+                    response = "已关闭所有玩家的旋转效果。";
+                    return true;
                 }
 
-                response = hide
-                    ? $"已对观战者隐藏 {player.Nickname} 的旋转效果。"
-                    : $"观战者现在可以看到 {player.Nickname} 的旋转效果。";
+                SpinVisualPlugin.Stop(player);
+                response = $"已关闭 {player.Nickname} 的旋转效果。";
                 return true;
             default:
                 response = Usage;

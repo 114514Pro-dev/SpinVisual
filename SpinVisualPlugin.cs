@@ -43,7 +43,7 @@ public sealed class SpinVisualPlugin : Plugin
 
             PlayerEvents.ChangedRole += OnChangedRole;
             PlayerEvents.Left += OnLeft;
-            ServerEvents.RoundRestarted += Clear;
+            ServerEvents.RoundRestarted += StopAll;
             IsAvailable = true;
         }
         catch (Exception exception)
@@ -58,8 +58,8 @@ public sealed class SpinVisualPlugin : Plugin
         IsAvailable = false;
         PlayerEvents.ChangedRole -= OnChangedRole;
         PlayerEvents.Left -= OnLeft;
-        ServerEvents.RoundRestarted -= Clear;
-        Clear();
+        ServerEvents.RoundRestarted -= StopAll;
+        StopAll();
         if (_target != null)
         {
             _harmony.Unpatch(_target, HarmonyPatchType.Transpiler, _harmony.Id);
@@ -67,7 +67,7 @@ public sealed class SpinVisualPlugin : Plugin
         }
     }
 
-    internal static bool TryStart(Player player, float degreesPerSecond)
+    internal static bool TryStart(Player player, float degreesPerSecond, bool? hideFromSpectators)
     {
         ReferenceHub hub = player.ReferenceHub;
         if (!player.IsAlive || hub.roleManager.CurrentRole is not IFpcRole role || !role.FpcModule.ModuleReady)
@@ -77,26 +77,28 @@ public sealed class SpinVisualPlugin : Plugin
         double now = Time.timeAsDouble;
         bool continuing = Spins.TryGetValue(hub, out Spin existing) && ReferenceEquals(mouseLook, existing.MouseLook);
         float yaw = continuing ? existing.GetYaw(now) : mouseLook.CurrentHorizontal;
-        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond, continuing && existing.HideFromSpectators);
+        bool hide = hideFromSpectators ?? (continuing && existing.HideFromSpectators);
+        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond, hide);
         return true;
     }
 
-    internal static bool TrySetHideFromSpectators(Player player, bool hide)
+    internal static int StartAll(float degreesPerSecond, bool? hideFromSpectators)
     {
-        ReferenceHub hub = player.ReferenceHub;
-        if (!Spins.TryGetValue(hub, out Spin spin))
-            return false;
+        int started = 0;
+        foreach (Player player in Player.ReadyList)
+        {
+            if (!player.IsHost && !player.IsDestroyed && TryStart(player, degreesPerSecond, hideFromSpectators))
+                started++;
+        }
 
-        spin.HideFromSpectators = hide;
-        Spins[hub] = spin;
-        return true;
+        return started;
     }
 
     internal static void Stop(Player player) => Spins.Remove(player.ReferenceHub);
+    internal static void StopAll() => Spins.Clear();
 
     private static void OnChangedRole(PlayerChangedRoleEventArgs ev) => Stop(ev.Player);
     private static void OnLeft(PlayerLeftEventArgs ev) => Stop(ev.Player);
-    private static void Clear() => Spins.Clear();
 
     private static IEnumerable<CodeInstruction> TranspileSyncData(IEnumerable<CodeInstruction> instructions)
     {
@@ -145,7 +147,7 @@ public sealed class SpinVisualPlugin : Plugin
         }
     }
 
-    private struct Spin
+    private readonly struct Spin
     {
         internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond, bool hideFromSpectators)
         {
@@ -157,7 +159,7 @@ public sealed class SpinVisualPlugin : Plugin
         }
 
         internal FpcMouseLook MouseLook { get; }
-        internal bool HideFromSpectators { get; set; }
+        internal bool HideFromSpectators { get; }
         private float Yaw { get; }
         private double StartedAt { get; }
         private float DegreesPerSecond { get; }
