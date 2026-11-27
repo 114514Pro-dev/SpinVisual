@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../build/scpsl-deps.props" Condition="Exists('../build/scpsl-deps.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <HARMONY_DLL Condition="'$(HARMONY_DLL)' == ''">$(APPDATA)\SCP Secret Laboratory\LabAPI\dependencies\global\0Harmony.dll</HARMONY_DLL>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="0Harmony" HintPath="$(HARMONY_DLL)" Private="false" />
+    <Reference Include="Assembly-CSharp" HintPath="$(SCP_SL_MANAGED)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="CommandSystem.Core" HintPath="$(SCP_SL_MANAGED)\CommandSystem.Core.dll" Private="false" />
+    <Reference Include="LabApi" HintPath="$(SCP_SL_MANAGED)\LabApi.dll" Private="false" />
+    <Reference Include="Mirror" HintPath="$(SCP_SL_MANAGED)\Mirror.dll" Private="false" />
+    <Reference Include="Pooling" HintPath="$(SCP_SL_MANAGED)\Pooling.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(SCP_SL_MANAGED)\UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+</Project>
