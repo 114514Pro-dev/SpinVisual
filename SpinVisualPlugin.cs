@@ -42,7 +42,7 @@ public sealed class SpinVisualPlugin : Plugin
 
             PlayerEvents.ChangedRole += OnChangedRole;
             PlayerEvents.Left += OnLeft;
-            ServerEvents.RoundRestarted += Clear;
+            ServerEvents.RoundRestarted += StopAll;
             IsAvailable = true;
         }
         catch (Exception exception)
@@ -57,8 +57,8 @@ public sealed class SpinVisualPlugin : Plugin
         IsAvailable = false;
         PlayerEvents.ChangedRole -= OnChangedRole;
         PlayerEvents.Left -= OnLeft;
-        ServerEvents.RoundRestarted -= Clear;
-        Clear();
+        ServerEvents.RoundRestarted -= StopAll;
+        StopAll();
         if (_target != null)
         {
             _harmony.Unpatch(_target, HarmonyPatchType.Transpiler, _harmony.Id);
@@ -66,7 +66,7 @@ public sealed class SpinVisualPlugin : Plugin
         }
     }
 
-    internal static bool TryStart(Player player, float degreesPerSecond)
+    internal static bool TryStart(Player player, float degreesPerSecond, bool? preserveSpectatedView)
     {
         ReferenceHub hub = player.ReferenceHub;
         if (!player.IsAlive || hub.roleManager.CurrentRole is not IFpcRole role || !role.FpcModule.ModuleReady)
@@ -74,18 +74,30 @@ public sealed class SpinVisualPlugin : Plugin
 
         FpcMouseLook mouseLook = role.FpcModule.MouseLook;
         double now = Time.timeAsDouble;
-        float yaw = Spins.TryGetValue(hub, out Spin existing) && ReferenceEquals(mouseLook, existing.MouseLook)
-            ? existing.GetYaw(now)
-            : mouseLook.CurrentHorizontal;
-        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond);
+        bool continuing = Spins.TryGetValue(hub, out Spin existing) && ReferenceEquals(mouseLook, existing.MouseLook);
+        float yaw = continuing ? existing.GetYaw(now) : mouseLook.CurrentHorizontal;
+        bool preserveView = preserveSpectatedView ?? (continuing && existing.PreserveSpectatedView);
+        Spins[hub] = new Spin(mouseLook, yaw, now, degreesPerSecond, preserveView);
         return true;
     }
 
+    internal static int StartAll(float degreesPerSecond, bool? preserveSpectatedView)
+    {
+        int started = 0;
+        foreach (Player player in Player.ReadyList)
+        {
+            if (!player.IsHost && !player.IsDestroyed && TryStart(player, degreesPerSecond, preserveSpectatedView))
+                started++;
+        }
+
+        return started;
+    }
+
     internal static void Stop(Player player) => Spins.Remove(player.ReferenceHub);
+    internal static void StopAll() => Spins.Clear();
 
     private static void OnChangedRole(PlayerChangedRoleEventArgs ev) => Stop(ev.Player);
     private static void OnLeft(PlayerLeftEventArgs ev) => Stop(ev.Player);
-    private static void Clear() => Spins.Clear();
 
     private static IEnumerable<CodeInstruction> TranspileSyncData(IEnumerable<CodeInstruction> instructions)
     {
@@ -105,7 +117,8 @@ public sealed class SpinVisualPlugin : Plugin
 
             replacements++;
             // GetNewSyncData takes the observer first and the player being synchronized second.
-            yield return new CodeInstruction(OpCodes.Ldarg_1).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            yield return new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            yield return new CodeInstruction(OpCodes.Ldarg_1);
             yield return new CodeInstruction(OpCodes.Call, factory);
         }
 
@@ -114,9 +127,10 @@ public sealed class SpinVisualPlugin : Plugin
     }
 
     private static FpcSyncData CreateSyncData(FpcSyncData previous, PlayerMovementState movementState,
-        bool grounded, RelativePosition position, FpcMouseLook mouseLook, ReferenceHub target)
+        bool grounded, RelativePosition position, FpcMouseLook mouseLook, ReferenceHub observer, ReferenceHub target)
     {
-        if (!Spins.TryGetValue(target, out Spin spin) || !ReferenceEquals(mouseLook, spin.MouseLook))
+        if (!Spins.TryGetValue(target, out Spin spin) || !ReferenceEquals(mouseLook, spin.MouseLook) ||
+            (spin.PreserveSpectatedView && ReferenceEquals(Player.Get(observer)?.CurrentlySpectating?.ReferenceHub, target)))
             return new FpcSyncData(previous, movementState, grounded, position, mouseLook);
 
         float originalYaw = mouseLook.CurrentHorizontal;
@@ -134,15 +148,17 @@ public sealed class SpinVisualPlugin : Plugin
 
     private readonly struct Spin
     {
-        internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond)
+        internal Spin(FpcMouseLook mouseLook, float yaw, double startedAt, float degreesPerSecond, bool preserveSpectatedView)
         {
             MouseLook = mouseLook;
             Yaw = yaw;
             StartedAt = startedAt;
             DegreesPerSecond = degreesPerSecond;
+            PreserveSpectatedView = preserveSpectatedView;
         }
 
         internal FpcMouseLook MouseLook { get; }
+        internal bool PreserveSpectatedView { get; }
         private float Yaw { get; }
         private double StartedAt { get; }
         private float DegreesPerSecond { get; }
